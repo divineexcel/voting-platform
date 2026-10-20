@@ -1,22 +1,4 @@
-import { NextResponse } from 'next/server';
+import { endpoint, json } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
-
 export const dynamic = 'force-dynamic';
-
-export async function GET(request) {
-  try {
-    const user = await getSessionUser(request);
-    
-    if (!user) {
-      return NextResponse.json({ user: null });
-    }
-
-    return NextResponse.json({ user });
-  } catch (error) {
-    console.error('Auth me error:', error);
-    return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
-    );
-  }
-}
+export const GET = endpoint(async request => json({ user: await getSessionUser(request) || null }));

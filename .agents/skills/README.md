@@ -22,3 +22,10 @@ MANIFEST.sha256` fails for absent `.github/workflows/ci.yml` and `.gitignore`,
 and outdated hashes for `LICENSE`, `README.md`, and `SKILL.md`. The same failure
 occurs in the source checkout. The manifest is preserved unchanged; imported files
 were independently compared byte-for-byte with the pinned source.
+
+## Superdesign
+
+Imported the complete `skills/superdesign/` package, unchanged, plus the upstream MIT
+license from https://github.com/superdesigndev/superdesign-skill at `f9f05cd988c247dce6c072eaf9ac6b162f2ffc4b`.
+Superdesign drives its hosted design canvas through its CLI; authentication and
+credits may be required. Existing RPI and Interface Forge instructions remain intact.

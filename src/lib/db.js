@@ -1,150 +1,123 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
-import path from 'path';
-import crypto from 'crypto';
+import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 
-// Path to SQLite database file
-const DB_PATH = path.join(process.cwd(), 'database.sqlite');
-
-let dbInstance = null;
-let isInitializing = false;
-
-// Password Hashing Helper
-export function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+function state() {
+  const key = Symbol.for(`apexvote.database.v2:${databasePath()}`);
+  return globalThis[key] ??= { initialization: undefined, writes: Promise.resolve() };
 }
-
-export function verifyPassword(password, storedPassword) {
-  if (!storedPassword || !storedPassword.includes(':')) return false;
-  const [salt, originalHash] = storedPassword.split(':');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === originalHash;
+export function databasePath() {
+  if (process.env.DATABASE_PATH) return path.resolve(process.env.DATABASE_PATH);
+  if (process.env.NODE_ENV === 'production') throw new Error('DATABASE_PATH_REQUIRED');
+  return path.join(process.cwd(), '.data', 'voting-v2.sqlite');
 }
-
-// Get or open database connection
-export async function getDb() {
-  if (dbInstance) return dbInstance;
-
-  dbInstance = await open({
-    filename: DB_PATH,
-    driver: sqlite3.Database
-  });
-
-  if (!isInitializing) {
-    isInitializing = true;
-    try {
-      await initDb();
-    } catch (e) {
-      console.error('Failed to auto-initialize DB:', e);
-    } finally {
-      isInitializing = false;
-    }
-  }
-
-  return dbInstance;
+async function connect() {
+  const filename = databasePath();
+  await mkdir(path.dirname(filename), { recursive: true, mode: 0o700 });
+  const db = await open({ filename, driver: sqlite3.Database });
+  await db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=10000;');
+  return db;
 }
-
-// Initialize database schema and seeds
-export async function initDb() {
-  const db = await getDb();
-
-  // Enable foreign keys
-  await db.run('PRAGMA foreign_keys = ON;');
-
-  // Create Users table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL, -- 'admin', 'subadmin', 'student'
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // Create Registration Codes table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS registration_codes (
-      code TEXT PRIMARY KEY,
-      used_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // Create Positions table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS positions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
-      description TEXT
-    );
-  `);
-
-  // Create Candidates table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS candidates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
-      manifesto TEXT,
-      status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
-      applied_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  // Create Votes table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS votes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      voter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
-      candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(voter_id, position_id)
-    );
-  `);
-
-  // Create Sessions table
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      token TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      expires_at DATETIME NOT NULL
-    );
-  `);
-
-  // Seed default super admin user if not exists
-  const adminExists = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
-  if (!adminExists) {
-    const defaultAdminPassword = hashPassword('admin123');
-    await db.run(
-      'INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)',
-      ['admin', defaultAdminPassword, 'Super Administrator', 'admin']
-    );
-    console.log('Database: Default Super Admin account seeded successfully (admin/admin123)');
-  }
-
-  // Seed default positions if they are empty
-  const positionsCount = await db.get('SELECT COUNT(*) as count FROM positions');
-  if (positionsCount.count === 0) {
-    const defaultPositions = [
-      { name: 'Head Boy', description: 'Leader and representative of the male students.' },
-      { name: 'Head Girl', description: 'Leader and representative of the female students.' },
-      { name: 'Sports Prefect', description: 'Coordinator of school sports activities and games.' },
-      { name: 'Library Prefect', description: 'Overseer of library orderliness and textbook resources.' },
-      { name: 'Sanitation Prefect', description: 'Responsible for maintaining cleanliness across the school premises.' }
-    ];
-
-    for (const pos of defaultPositions) {
-      await db.run(
-        'INSERT INTO positions (name, description) VALUES (?, ?)',
-        [pos.name, pos.description]
+async function initialize() {
+  const db = await connect();
+  try {
+    const legacy = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='votes'");
+    const version = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_metadata'");
+    if (legacy || (!version && await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'"))) throw new Error('LEGACY_DATABASE_REQUIRES_APPROVED_MIGRATION');
+    await db.exec('PRAGMA journal_mode=WAL;');
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_metadata (version INTEGER PRIMARY KEY CHECK(version=2));
+      INSERT OR IGNORE INTO schema_metadata VALUES(2);
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL, name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('admin','subadmin','student')),
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
-    }
-    console.log('Database: Default voting positions seeded successfully');
-  }
+      CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
+      CREATE TABLE IF NOT EXISTS registration_codes (
+        code_hash TEXT PRIMARY KEY, display_suffix TEXT NOT NULL,
+        consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed IN (0,1)),
+        used_by_user_id INTEGER REFERENCES users(id), expires_at INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS elections (
+        id INTEGER PRIMARY KEY CHECK(id=1), title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','open','closed')),
+        opens_at TEXT, closes_at TEXT, revision INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT OR IGNORE INTO elections(id,title) VALUES(1,'Student council election');
+      CREATE TABLE IF NOT EXISTS positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, description TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS candidates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+        position_id INTEGER NOT NULL REFERENCES positions(id), manifesto TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+        applied_by_user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(applied_by_user_id,position_id), UNIQUE(id,position_id)
+      );
+      CREATE TABLE IF NOT EXISTS participation (
+        user_id INTEGER NOT NULL REFERENCES users(id), position_id INTEGER NOT NULL REFERENCES positions(id),
+        PRIMARY KEY(user_id,position_id)
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS ballots (
+        id TEXT PRIMARY KEY, position_id INTEGER NOT NULL REFERENCES positions(id), candidate_id INTEGER NOT NULL,
+        FOREIGN KEY(candidate_id,position_id) REFERENCES candidates(id,position_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS ballots_candidate ON ballots(candidate_id);
+      CREATE INDEX IF NOT EXISTS ballots_position ON ballots(position_id);
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER REFERENCES users(id), event TEXT NOT NULL, target_id TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS rate_limits (key_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, reset_at INTEGER NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS immutable_ballot_update BEFORE UPDATE ON ballots
+        BEGIN SELECT RAISE(ABORT,'accepted ballots are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_ballot_delete BEFORE DELETE ON ballots
+        BEGIN SELECT RAISE(ABORT,'accepted ballots are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_participation_delete BEFORE DELETE ON participation
+        BEGIN SELECT RAISE(ABORT,'accepted participation is immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_participation_update BEFORE UPDATE ON participation
+        BEGIN SELECT RAISE(ABORT,'accepted participation is immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_code_claim BEFORE UPDATE OF consumed ON registration_codes
+        WHEN OLD.consumed=1 AND NEW.consumed<>1
+        BEGIN SELECT RAISE(ABORT,'consumed codes cannot reopen'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_audit_update BEFORE UPDATE ON audit_events
+        BEGIN SELECT RAISE(ABORT,'audit events are append only'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_audit_delete BEFORE DELETE ON audit_events
+        BEGIN SELECT RAISE(ABORT,'audit events are append only'); END;
+    `);
+    for (const [name, description] of [
+      ['Head Boy','Student leadership and representation.'], ['Head Girl','Student leadership and representation.'],
+      ['Sports Prefect','Sport, teamwork and school activities.'], ['Library Prefect','Reading, learning and library resources.'],
+      ['Sanitation Prefect','A clean and welcoming school environment.']
+    ]) await db.run('INSERT OR IGNORE INTO positions(name,description) VALUES(?,?)', name, description);
+  } finally { await db.close(); }
+}
+export async function withDb(work) {
+  const current = state();
+  current.initialization ??= initialize().catch(error => { current.initialization = undefined; throw error; });
+  await current.initialization;
+  const db = await connect();
+  try { return await work(db); } finally { await db.close(); }
+}
+export function transaction(work) {
+  const current = state();
+  const pending = current.writes.then(() => withDb(async db => {
+    await db.exec('BEGIN IMMEDIATE');
+    try { const result = await work(db); await db.exec('COMMIT'); return result; }
+    catch (error) { await db.exec('ROLLBACK'); throw error; }
+  }));
+  current.writes = pending.catch(() => {});
+  return pending;
+}
+export async function audit(db, actor, event, target = null) {
+  await db.run('INSERT INTO audit_events(actor_id,event,target_id) VALUES(?,?,?)', actor, event, target === null ? null : String(target));
 }

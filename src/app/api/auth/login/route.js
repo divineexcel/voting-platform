@@ -1,56 +1,21 @@
-import { NextResponse } from 'next/server';
-import { getDb, verifyPassword } from '@/lib/db';
-import { createSession } from '@/lib/auth';
-
-export async function POST(request) {
-  try {
-    const { username, password } = await request.json();
-
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: 'Username and password are required' },
-        { status: 400 }
-      );
-    }
-
-    const db = await getDb();
-    const user = await db.get('SELECT * FROM users WHERE username = ?', [username.trim()]);
-
-    if (!user || !verifyPassword(password, user.password)) {
-      return NextResponse.json(
-        { error: 'Invalid username or password' },
-        { status: 401 }
-      );
-    }
-
-    // Create session
-    const { token, expiresAt } = await createSession(user.id);
-
-    // Set cookie
-    const response = NextResponse.json({
-      success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role
-      }
-    });
-
-    response.cookies.set('session_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      expires: new Date(expiresAt),
-      path: '/'
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Login error:', error);
-    return NextResponse.json(
-      { error: 'An unexpected error occurred during login' },
-      { status: 500 }
-    );
-  }
-}
+import { endpoint, json, sessionCookie } from '@/lib/api';
+import { body, username, verifyPassword, hashPassword, limit, AppError } from '@/lib/security';
+import { randomBytes } from 'node:crypto';
+import { withDb } from '@/lib/db';
+import { createSession, deleteSession } from '@/lib/auth';
+let dummy;
+export const POST = endpoint(async request => {
+  const input = await body(request);
+  const login = username(input.username);
+  if (typeof input.password !== 'string' || !input.password.length || input.password.length > 128) throw new AppError(400, 'INVALID_INPUT', 'Enter a valid password.');
+  const secret = input.password;
+  await limit(`login:${login}`, 10);
+  await limit('login:global', 300);
+  const account = await withDb(db => db.get('SELECT * FROM users WHERE username=?', login));
+  dummy ??= hashPassword(randomBytes(32).toString('hex'));
+  const valid = await verifyPassword(secret, account?.password || await dummy);
+  if (!account?.active || !valid) throw new AppError(401, 'INVALID_CREDENTIALS', 'Your username or password is incorrect.');
+  await deleteSession(request.cookies.get('session_token')?.value);
+  const { token, expiresAt } = await createSession(account.id);
+  return sessionCookie(json({ success: true, user: { id: account.id, name: account.name, username: account.username, role: account.role } }), token, expiresAt);
+});
