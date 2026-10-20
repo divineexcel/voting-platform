@@ -4,3 +4,10 @@ node_modules
 out
 dist
 build
+.data/
+.superdesign/tmp/
+.superdesign/replica_html_template/
+coverage/
+*.sqlite-wal
+*.sqlite-shm
+database.sqlite
