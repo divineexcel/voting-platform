@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { Children, useEffect, useId, useRef, useState } from "react";
 import { Vote, LogOut, ArrowUpRight } from "lucide-react";
 import { api, useResource } from "./client";
 
@@ -16,7 +16,10 @@ export function Brand() {
   );
 }
 export function Notice({ children, error = false }) {
-  return children ? (
+  const content = Children.toArray(children).filter(
+    (child) => typeof child !== "string" || child.trim().length > 0,
+  );
+  return content.length ? (
     <div
       className={`notice ${error ? "notice-error" : ""}`}
       role={error ? "alert" : "status"}
