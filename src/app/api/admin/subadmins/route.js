@@ -12,5 +12,5 @@ export const POST = endpoint(async request => {
     const created = await db.run('INSERT INTO users(username,name,password,role) VALUES(?,?,?,?)', login, name, hash, 'subadmin');
     await audit(db, user.id, 'subadmin_created', created.lastID);
   });
-  return json({ success: true, message: 'Administrator account created.' });
+  return json({ success: true, message: 'Election staff account created.' });
 });

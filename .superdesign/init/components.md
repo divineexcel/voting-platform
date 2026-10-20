@@ -1,3 +1,5 @@
+> Historical context: pre-upgrade UI source used for the baseline draft. The implemented interface now uses shared components in `src/components/`; refresh this context before future source-based design generation.
+
 # Shared UI components — baseline source discovery
 
 Framework: Next.js 14 App Router, React 18, JavaScript JSX. Icons: `lucide-react`. Styling: Tailwind CSS 4 through `@tailwindcss/postcss`, plus `src/app/globals.css`. There is no installed component library, no `src/components/` directory, and no separately exported shared UI primitives. All buttons, fields, cards, badges, alerts, tabs and confirmation overlay are currently inline in two client page files. There are therefore no shared primitive source files to dump. Do not mistake proposed components for existing implementations.

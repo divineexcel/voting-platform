@@ -15,4 +15,4 @@ Selected visual reference: the previously captured baseline `student-dashboard-1
 
 Excluded: database files, backend source, credential files, tokens, personal records, environment variables, logs, unrelated repository files and repository history.
 
-Generation is paused: automatic approval review rejected the source-context export because the user had not explicitly authorized exporting that payload. A specific source-export question is pending. No design draft has been generated and no new UI has been integrated. The project/context preparation is not evidence that a completed design exists.
+The user explicitly approved sending these selected UI files on 20 October 2026. The baseline and refined draft were generated using this exact bundle. The user subsequently approved the concrete green design direction, which is now implemented in the application source. No additional source bundle was sent during implementation. The export excludes all records and credentials listed above.

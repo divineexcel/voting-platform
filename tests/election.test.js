@@ -9,7 +9,7 @@ process.env.DATABASE_PATH = path.join(directory, 'fixture.sqlite');
 const { withDb, transaction } = await import('../src/lib/db.js');
 const { hashPassword, verifyPassword, digest, body, checkOrigin } = await import('../src/lib/security.js');
 const { createSession, getSessionUser } = await import('../src/lib/auth.js');
-const { generateCodes, registerStudent, applyCandidacy, reviewCandidate, castBallot, updateElection, positionsFor, deactivateStudent, resultsSnapshot, electionState } = await import('../src/lib/election.js');
+const { generateCodes, registerStudent, applyCandidacy, reviewCandidate, castBallot, updateElection, positionsFor, deactivateStudent, resultsSnapshot, electionState, reconcileBallot } = await import('../src/lib/election.js');
 test.after(async () => rm(directory, { recursive: true, force: true }));
 let admin, first, second, candidate;
 const fixturePassword = 'fixture-only-password-129!';
@@ -57,6 +57,17 @@ test('parallel ballot requests reconcile as accepted but count only once', async
   assert.ok(responses.every(r => r.accepted && !('candidateId' in r)));
   assert.equal((await withDb(db => db.get('SELECT COUNT(*) AS n FROM ballots'))).n, 1);
   assert.equal((await withDb(db => db.get('SELECT COUNT(*) AS n FROM participation'))).n, 1);
+});
+test('negative reconciliation revokes delayed submissions without storing a choice fingerprint', async () => {
+  const status = await reconcileBallot(second.id, { positionId: 2 });
+  assert.equal(status.accepted, false);
+  assert.equal(status.attemptVersion, 1);
+  await assert.rejects(castBallot(second.id, { positionId: 2, candidateId: candidate }), { code: 'STALE_ATTEMPT' });
+  await assert.rejects(castBallot(second.id, { positionId: 2, candidateId: candidate, attemptVersion: status.attemptVersion }), { code: 'INVALID_CANDIDATE' });
+  assert.equal((await positionsFor(second)).attemptVersions[2], status.attemptVersion);
+  assert.deepEqual(await reconcileBallot(first.id, { positionId: 1 }), { accepted: true, positionId: 1 });
+  const columns = await withDb(db => db.all('PRAGMA table_info(ballot_attempts)'));
+  assert.deepEqual(columns.map(c => c.name).sort(), ['position_id', 'user_id', 'version']);
 });
 test('participant status and live snapshots expose no voter-choice mapping', async () => {
   const positions = await positionsFor(first);
@@ -121,4 +132,30 @@ test('an existing legacy database is refused without modifying its bytes', async
     await assert.rejects(withDb(connection => connection.get('SELECT 1')), /LEGACY_DATABASE_REQUIRES_APPROVED_MIGRATION/);
   } finally { process.env.DATABASE_PATH = originalPath; }
   assert.deepEqual(await readFile(legacyPath), before);
+});
+
+test('reconciliation and acceptance are serialized in either arrival order', async () => {
+  const originalPath = process.env.DATABASE_PATH;
+  process.env.DATABASE_PATH = path.join(directory, 'recovery-race.sqlite');
+  try {
+    const people = await transaction(async db => {
+      const a = await db.run("INSERT INTO users(username,password,name,role) VALUES('race-a','fixture','Fixture A','student')");
+      const b = await db.run("INSERT INTO users(username,password,name,role) VALUES('race-b','fixture','Fixture B','student')");
+      const c = await db.run("INSERT INTO candidates(name,position_id,manifesto,status,applied_by_user_id) VALUES('Fixture candidate',1,'Fixture statement','approved',?)", a.lastID);
+      await db.run("UPDATE elections SET status='open' WHERE id=1");
+      return { a:a.lastID, b:b.lastID, candidate:c.lastID };
+    });
+    const [ballot, accepted] = await Promise.all([
+      castBallot(people.a, {positionId:1,candidateId:people.candidate}),
+      reconcileBallot(people.a, {positionId:1})
+    ]);
+    assert.equal(ballot.accepted,true);assert.equal(accepted.accepted,true);
+    const [cancelled, late] = await Promise.allSettled([
+      reconcileBallot(people.b, {positionId:1}),
+      castBallot(people.b, {positionId:1,candidateId:people.candidate})
+    ]);
+    assert.equal(cancelled.value.accepted,false);assert.equal(late.reason.code,'STALE_ATTEMPT');
+    await castBallot(people.b,{positionId:1,candidateId:people.candidate,attemptVersion:cancelled.value.attemptVersion});
+    assert.equal((await resultsSnapshot()).stats.totalVotesCast,2);
+  } finally { process.env.DATABASE_PATH = originalPath; }
 });

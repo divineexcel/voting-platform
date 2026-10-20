@@ -1,3 +1,5 @@
+> Historical context: pre-upgrade UI source used for the baseline draft. The implemented interface now uses shared components in `src/components/`; refresh this context before future source-based design generation.
+
 # Complete UI local-import dependency trees
 
 There are exactly two page entries. Neither imports a local component or local client utility; both are monolithic client files. External React, Next navigation and Lucide imports are excluded from these local dependency trees. HTTP fetch targets are not JavaScript imports and are listed separately. Shared ancestor layout dependencies are included explicitly.

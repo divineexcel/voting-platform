@@ -56,8 +56,10 @@ export async function positionsFor(user) {
       const candidates = await db.all("SELECT id,name,position_id,manifesto FROM candidates WHERE status='approved' ORDER BY name COLLATE NOCASE,id");
       const participation = user.role === 'student' ? await db.all('SELECT position_id FROM participation WHERE user_id=?', user.id) : [];
       const acceptedPositions = participation.map(row => row.position_id);
+      const attempts = user.role === 'student' ? await db.all('SELECT position_id,version FROM ballot_attempts WHERE user_id=?', user.id) : [];
+      const attemptVersions = Object.fromEntries(attempts.map(row => [row.position_id, row.version]));
       await db.exec('COMMIT');
-      return { election, positions: positions.map(position => ({ ...position, candidates: candidates.filter(c => c.position_id === position.id) })), acceptedPositions };
+      return { election, positions: positions.map(position => ({ ...position, candidates: candidates.filter(c => c.position_id === position.id) })), acceptedPositions, attemptVersions };
     } catch (error) { await db.exec('ROLLBACK'); throw error; }
   });
 }
@@ -72,6 +74,10 @@ export async function castBallot(userId, input) {
     if (await db.get('SELECT 1 FROM participation WHERE user_id=? AND position_id=?', userId, positionId)) {
       return { success: true, accepted: true, alreadyAccepted: true, positionId, message: 'Your ballot for this office has already been accepted.' };
     }
+    const attemptVersion = input.attemptVersion ?? 0;
+    if (!Number.isSafeInteger(attemptVersion) || attemptVersion < 0) throw new AppError(400, 'INVALID_ATTEMPT', 'Invalid ballot attempt.');
+    const attempt = await db.get('SELECT version FROM ballot_attempts WHERE user_id=? AND position_id=?', userId, positionId);
+    if (attemptVersion !== (attempt?.version || 0)) throw new AppError(409, 'STALE_ATTEMPT', 'This earlier submission was cancelled by a status check. Refresh your ballot before submitting again.');
     const election = await db.get('SELECT * FROM elections WHERE id=1');
     if (electionState(election) !== 'open') throw new AppError(409, 'VOTING_NOT_OPEN', 'Voting is not open for this election.');
     const candidate = await db.get("SELECT id FROM candidates WHERE id=? AND position_id=? AND status='approved'", candidateId, positionId);
@@ -80,6 +86,20 @@ export async function castBallot(userId, input) {
     await db.run('INSERT INTO ballots(id,position_id,candidate_id) VALUES(?,?,?)', randomUUID(), positionId, candidateId);
     await db.run('UPDATE elections SET revision=revision+1 WHERE id=1');
     return { success: true, accepted: true, alreadyAccepted: false, positionId, message: 'Your ballot has been accepted. Your choice is not included in your participation history.' };
+  });
+}
+
+// A write barrier: either the earlier ballot committed, or its generation is revoked.
+// A delayed POST with the old version can never accept after a negative reconciliation.
+export async function reconcileBallot(userId, input) {
+  const positionId = identifier(input.positionId, 'Position');
+  return transaction(async db => {
+    if (!await db.get("SELECT id FROM users WHERE id=? AND active=1 AND role='student'", userId)) throw new AppError(403, 'INELIGIBLE', 'This account is not eligible to vote.');
+    if (!await db.get('SELECT id FROM positions WHERE id=?', positionId)) throw new AppError(404, 'POSITION_NOT_FOUND', 'This office does not exist.');
+    if (await db.get('SELECT 1 FROM participation WHERE user_id=? AND position_id=?', userId, positionId)) return { accepted: true, positionId };
+    await db.run('INSERT INTO ballot_attempts(user_id,position_id,version) VALUES(?,?,1) ON CONFLICT(user_id,position_id) DO UPDATE SET version=version+1', userId, positionId);
+    const row = await db.get('SELECT version FROM ballot_attempts WHERE user_id=? AND position_id=?', userId, positionId);
+    return { accepted: false, positionId, attemptVersion: row.version };
   });
 }
 

@@ -67,6 +67,10 @@ async function initialize() {
         user_id INTEGER NOT NULL REFERENCES users(id), position_id INTEGER NOT NULL REFERENCES positions(id),
         PRIMARY KEY(user_id,position_id)
       ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS ballot_attempts (
+        user_id INTEGER NOT NULL REFERENCES users(id), position_id INTEGER NOT NULL REFERENCES positions(id),
+        version INTEGER NOT NULL DEFAULT 0 CHECK(version>=0), PRIMARY KEY(user_id,position_id)
+      ) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS ballots (
         id TEXT PRIMARY KEY, position_id INTEGER NOT NULL REFERENCES positions(id), candidate_id INTEGER NOT NULL,
         FOREIGN KEY(candidate_id,position_id) REFERENCES candidates(id,position_id)

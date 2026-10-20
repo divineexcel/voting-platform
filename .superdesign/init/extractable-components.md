@@ -1,3 +1,5 @@
+> Historical context: pre-upgrade UI source used for the baseline draft. The implemented interface now uses shared components in `src/components/`; refresh this context before future source-based design generation.
+
 # Extractable UI patterns
 
 No shared UI component directory currently exists. Entries below are extraction candidates embedded in the named page sources, not already reusable exported components. RootLayout is the only existing shared exported layout. Keep labels, icon choices, CSS and product identity fixed in each extracted design; expose only changing state/navigation/count values. Full root and local header source appear in `layouts.md`; shared status CSS appears in `theme.md`.

@@ -1,6 +1,6 @@
 # Proposed design direction and system
 
-Status: planning artifact, not implemented styling. Current identity: ApexVote, forest green `#0F5A47`, mint, pale green-gray canvas, white surfaces, Outfit/Inter, Lucide icons. School identity has not been supplied. Preserve these as provisional brand assets rather than substituting a new institutional identity.
+Status: School civic direction approved by the user and implemented in the upgrade branch. This document preserves the design brief used for generation. Current identity: ApexVote, forest green `#0F5A47`, mint, pale green-gray canvas, white surfaces, Outfit/Inter, Lucide icons. School identity has not been supplied. Preserve these as provisional brand assets rather than substituting a new institutional identity.
 
 ## Direction comparison
 

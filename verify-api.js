@@ -24,7 +24,11 @@ assert.equal((await call('/api/candidates/apply','POST',{positionId:1,manifesto:
 const applications=await call('/api/candidates/apply');const candidate=applications.data.applications[0].id;
 assert.equal((await call('/api/admin/candidates','POST',{id:candidate,status:'approved'},admin)).status,200);
 assert.equal((await call('/api/admin/election','POST',{action:'open'},admin)).status,200);
-const attempts=await Promise.all(Array.from({length:8},()=>call('/api/votes/cast','POST',{positionId:1,candidateId:candidate})));
+const recovered=await call('/api/votes/reconcile','POST',{positionId:1});
+assert.equal(recovered.status,200);assert.equal(recovered.data.accepted,false);
+assert.equal((await call('/api/votes/cast','POST',{positionId:1,candidateId:candidate})).status,409);
+const attempts=await Promise.all(Array.from({length:8},()=>call('/api/votes/cast','POST',{positionId:1,candidateId:candidate,attemptVersion:recovered.data.attemptVersion})));
+assert.equal((await call('/api/votes/reconcile','POST',{positionId:1})).data.accepted,true);
 assert.ok(attempts.every(x=>x.status===200&&x.data.accepted));assert.equal(attempts.filter(x=>!x.data.alreadyAccepted).length,1);
 const snapshot=await call('/api/results/live');assert.equal(snapshot.data.stats.totalVotesCast,1);assert.equal(snapshot.data.results[0].totalVotes,1);
 const positions=await call('/api/positions');assert.deepEqual(positions.data.acceptedPositions,[1]);assert.equal(positions.data.userVotes,undefined);

@@ -1,3 +1,5 @@
+> Historical context: pre-upgrade UI source used for the baseline draft. The implemented interface now uses shared components in `src/components/`; refresh this context before future source-based design generation.
+
 # Routes and framework configuration
 
 Next.js App Router derives paths from `src/app`; no explicit router config file exists. All UI uses `src/app/layout.js` and `src/app/globals.css`. `useRouter` comes from `next/navigation`.

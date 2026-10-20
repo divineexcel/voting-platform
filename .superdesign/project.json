@@ -4,7 +4,9 @@
   "referenceNodeId": "993ef98b-3545-49ee-8b4f-4c7551b1f0ff",
   "componentId": "2fb4519f-d8fe-4257-9d36-0ca6e11feecd",
   "target": "/ student ballot",
-  "draftId": null,
-  "status": "awaiting-explicit-source-export-approval",
-  "selectedModel": "gemini-3.1-pro"
+  "draftId": "53910481-02e9-45c4-9bde-18f0e864ce8f",
+  "status": "approved-direction-implemented-in-source",
+  "selectedModel": "gemini-3.1-pro",
+  "currentVersion": 4,
+  "previewUrl": "https://p.superdesign.dev/draft/53910481-02e9-45c4-9bde-18f0e864ce8f"
 }

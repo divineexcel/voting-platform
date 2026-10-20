@@ -1,3 +1,5 @@
+> Historical context: pre-upgrade UI source used for the baseline draft. The implemented interface now uses shared components in `src/components/`; refresh this context before future source-based design generation.
+
 # Baseline theme — actual implemented values
 
 ## Part 1: compact token summary
