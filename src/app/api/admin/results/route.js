@@ -13,22 +13,18 @@ export async function GET(request) {
 
     const db = await getDb();
 
-    // 1. Fetch total codes generated
-    const codesCount = await db.get('SELECT COUNT(*) as count FROM registration_codes');
-    const totalCodes = codesCount.count;
-
-    // 2. Fetch total registered students (used codes)
+    // 1. Fetch total registered student accounts
     const registeredCount = await db.get(
-      'SELECT COUNT(*) as count FROM registration_codes WHERE used_by_user_id IS NOT NULL'
+      "SELECT COUNT(*) as count FROM users WHERE role = 'student'"
     );
     const registeredStudents = registeredCount.count;
 
-    // 3. Fetch total votes cast (voters who voted, distinct voter/position or total vote count)
+    // 2. Fetch total votes cast (voters who voted, distinct voter/position or total vote count)
     // In our system, a vote is cast per position. Total votes cast can be the number of rows in the votes table.
     const votesCount = await db.get('SELECT COUNT(*) as count FROM votes');
     const totalVotesCast = votesCount.count;
 
-    // 4. Calculate participation rate (percentage of registered students who cast at least one vote)
+    // 3. Calculate participation rate (percentage of registered students who cast at least one vote)
     const distinctVotersCount = await db.get('SELECT COUNT(DISTINCT voter_id) as count FROM votes');
     const uniqueVoters = distinctVotersCount.count;
     const participationRate = registeredStudents > 0 
@@ -72,7 +68,6 @@ export async function GET(request) {
 
     return NextResponse.json({
       stats: {
-        totalCodes,
         registeredStudents,
         totalVotesCast,
         uniqueVoters,

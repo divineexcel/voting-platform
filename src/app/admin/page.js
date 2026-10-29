@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Vote, Users, TrendingUp, LogOut, Key, FileText, CheckCircle2, 
-  XCircle, Check, Loader2, Plus, ShieldAlert, ChevronRight,
+  Vote, Users, TrendingUp, LogOut, FileText, CheckCircle2,
+  XCircle, Check, Loader2, ShieldAlert, ChevronRight,
   Info, ShieldCheck, RefreshCw, BarChart2, Shield, Lock
 } from 'lucide-react';
 
@@ -19,14 +19,12 @@ export default function AdminPortal() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
   // Admin States
-  const [adminActiveTab, setAdminActiveTab] = useState('results'); // 'results' | 'codes' | 'applications' | 'subadmins' | 'students'
-  const [adminStats, setAdminStats] = useState({ totalCodes: 0, registeredStudents: 0, totalVotesCast: 0, uniqueVoters: 0, participationRate: 0 });
+  const [adminActiveTab, setAdminActiveTab] = useState('results'); // 'results' | 'applications' | 'subadmins' | 'students'
+  const [adminStats, setAdminStats] = useState({ registeredStudents: 0, totalVotesCast: 0, uniqueVoters: 0, participationRate: 0 });
   const [adminResults, setAdminResults] = useState([]);
-  const [adminCodes, setAdminCodes] = useState([]);
   const [adminApplications, setAdminApplications] = useState([]);
   const [adminStudents, setAdminStudents] = useState([]);
-  const [codeGenerateCount, setCodeGenerateCount] = useState(10);
-  const [newSubadminForm, setNewSubadminForm] = useState({ name: '', username: '', password: '' });
+  const [newSubadminForm, setNewSubadminForm] = useState({ email: '', username: '', password: '' });
   const [adminActionLoading, setAdminActionLoading] = useState(false);
   const [adminMessage, setAdminMessage] = useState({ type: '', text: '' });
 
@@ -66,11 +64,6 @@ export default function AdminPortal() {
       const resData = await resRes.json();
       if (resData.stats) setAdminStats(resData.stats);
       if (resData.results) setAdminResults(resData.results);
-
-      // Registration Codes
-      const codesRes = await fetch('/api/admin/codes');
-      const codesData = await codesRes.json();
-      if (codesData.codes) setAdminCodes(codesData.codes);
 
       // Candidate Applications
       const appsRes = await fetch('/api/admin/candidates');
@@ -123,36 +116,10 @@ export default function AdminPortal() {
       await fetch('/api/auth/logout', { method: 'POST' });
       setUser(null);
       setAdminResults([]);
-      setAdminCodes([]);
       setAdminApplications([]);
       router.push('/admin');
     } catch (e) {
       console.error('Logout failed', e);
-    }
-  };
-
-  // ADMIN GENERATE CODES Handler
-  const handleGenerateCodes = async (e) => {
-    e.preventDefault();
-    setAdminActionLoading(true);
-    setAdminMessage({ type: '', text: '' });
-
-    try {
-      const res = await fetch('/api/admin/codes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count: codeGenerateCount })
-      });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || 'Failed to generate codes');
-
-      setAdminMessage({ type: 'success', text: data.message });
-      fetchAdminData();
-    } catch (err) {
-      setAdminMessage({ type: 'error', text: err.message });
-    } finally {
-      setAdminActionLoading(false);
     }
   };
 
@@ -173,7 +140,7 @@ export default function AdminPortal() {
       if (!res.ok) throw new Error(data.error || 'Failed to create sub-admin');
 
       setAdminMessage({ type: 'success', text: data.message });
-      setNewSubadminForm({ name: '', username: '', password: '' });
+      setNewSubadminForm({ email: '', username: '', password: '' });
       fetchAdminData();
     } catch (err) {
       setAdminMessage({ type: 'error', text: err.message });
@@ -208,7 +175,7 @@ export default function AdminPortal() {
 
   // ADMIN DELETE STUDENT Handler
   const handleDeleteStudent = async (studentId) => {
-    if (!confirm("Are you sure you want to permanently delete this student account? This will cascade and delete their votes and candidacy applications, and make their registration code active again.")) {
+    if (!confirm("Are you sure you want to permanently delete this student account? This will cascade and delete their votes and candidacy applications.")) {
       return;
     }
 
@@ -283,11 +250,11 @@ export default function AdminPortal() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Admin Username</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Admin Username or Email</label>
               <input
                 type="text"
                 required
-                placeholder="Username"
+                placeholder="Username or email address"
                 value={loginForm.username}
                 onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
                 className="w-full px-4 py-3 bg-[#080c0a] border border-emerald-950 focus:border-emerald-500/40 rounded-2xl focus:outline-none text-slate-100 text-sm transition-all placeholder-slate-600 focus:ring-1 focus:ring-emerald-500/20"
@@ -412,9 +379,9 @@ export default function AdminPortal() {
         {/* Statistics Metric Cards Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Voter Codes Generated', value: adminStats.totalCodes, icon: Key },
             { label: 'Registered Students', value: adminStats.registeredStudents, icon: Users },
             { label: 'Total Votes Cast', value: adminStats.totalVotesCast, icon: Vote },
+            { label: 'Unique Voters', value: adminStats.uniqueVoters, icon: Users },
             { label: 'Participation Turnout', value: `${adminStats.participationRate}%`, icon: TrendingUp }
           ].map((stat, idx) => (
             <div key={idx} className="bg-white p-5 rounded-3xl border border-gray-100 flex flex-col justify-between shadow-sm relative overflow-hidden">
@@ -433,7 +400,6 @@ export default function AdminPortal() {
         <div className="flex flex-wrap gap-2 border-b border-gray-200/60 pb-4 mb-8">
           {[
             { id: 'results', label: 'Election Tallies & Stats', icon: BarChart2 },
-            { id: 'codes', label: 'Voter Registration Codes', icon: Key },
             { id: 'students', label: 'Registered Students', icon: Users },
             { id: 'applications', label: 'Contestant Applications', icon: FileText, badge: adminApplications.filter(a => a.status === 'pending').length },
             { id: 'subadmins', label: 'Create Sub-Admin', icon: ShieldCheck, superOnly: true }
@@ -540,93 +506,6 @@ export default function AdminPortal() {
             </div>
           )}
 
-          {/* ==================== 2. CODES TAB ==================== */}
-          {adminActiveTab === 'codes' && (
-            <div className="space-y-6 animate-fadeIn">
-              {/* Generate codes form */}
-              <div className="bg-white rounded-3xl p-6 border border-gray-100 max-w-md shadow-sm">
-                <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Batch Code Generation</h4>
-                <form onSubmit={handleGenerateCodes} className="flex gap-4 items-end">
-                  <div className="flex-1">
-                    <label className="block text-[11px] font-bold text-slate-500 mb-2">Number of Codes to Create</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      required
-                      value={codeGenerateCount}
-                      onChange={(e) => setCodeGenerateCount(parseInt(e.target.value, 10))}
-                      className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#0F5A47] text-gray-800 text-sm transition-colors"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={adminActionLoading}
-                    className="px-6 py-2.5 bg-[#0F5A47] hover:bg-[#0a4133] text-white font-bold rounded-2xl text-sm transition-all active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-1.5 shrink-0"
-                  >
-                    {adminActionLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4" />
-                        <span>Generate</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-              </div>
-
-              {/* Codes table */}
-              <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <h4 className="font-bold text-slate-800 text-sm">Voter Access Registry</h4>
-                  <span className="text-xs font-semibold text-slate-500">Total: {adminCodes.length} codes</span>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                        <th className="px-6 py-3.5">Code</th>
-                        <th className="px-6 py-3.5">Status</th>
-                        <th className="px-6 py-3.5">Claimed By (Student Username)</th>
-                        <th className="px-6 py-3.5">Generated Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 text-slate-600 text-sm font-light">
-                      {adminCodes.length === 0 ? (
-                        <tr>
-                          <td colSpan="4" className="px-6 py-8 text-center text-slate-400">No registration codes generated yet. Use the tool above to generate voter codes.</td>
-                        </tr>
-                      ) : (
-                        adminCodes.map((c) => (
-                          <tr key={c.code} className="hover:bg-gray-50/30 transition-colors">
-                            <td className="px-6 py-4 font-mono font-bold tracking-wider text-[#0F5A47] text-sm">{c.code}</td>
-                            <td className="px-6 py-4">
-                              {c.used_by_user_id ? (
-                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-lg text-xs font-semibold">Used</span>
-                              ) : (
-                                <span className="text-slate-500 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-lg text-xs font-semibold">Unused</span>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 font-semibold text-xs text-slate-700">
-                              {c.student_name ? (
-                                <span>{c.student_name} <span className="text-slate-400 font-light font-normal">(@{c.student_username})</span></span>
-                              ) : (
-                                <span className="text-slate-400 italic font-light font-normal">—</span>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-400">{new Date(c.created_at).toLocaleString()}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ==================== 3. CANDIDATE APPLICATIONS TAB ==================== */}
           {adminActiveTab === 'applications' && (
             <div className="space-y-6 animate-fadeIn">
@@ -718,10 +597,9 @@ export default function AdminPortal() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-gray-100 bg-gray-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                        <th className="px-6 py-3.5">Name</th>
+                        <th className="px-6 py-3.5">Account</th>
                         <th className="px-6 py-3.5">Username</th>
-                        <th className="px-6 py-3.5">Voter Code Used</th>
-                        <th className="px-6 py-3.5">Password Hash (PBKDF2)</th>
+                        <th className="px-6 py-3.5">Email</th>
                         <th className="px-6 py-3.5">Registration Date</th>
                         <th className="px-6 py-3.5 text-right">Actions</th>
                       </tr>
@@ -729,21 +607,14 @@ export default function AdminPortal() {
                     <tbody className="divide-y divide-gray-100 text-slate-600 text-sm font-light">
                       {adminStudents.length === 0 ? (
                         <tr>
-                          <td colSpan="6" className="px-6 py-8 text-center text-slate-400">No student accounts registered in the database.</td>
+                          <td colSpan="5" className="px-6 py-8 text-center text-slate-400">No student accounts registered in the database.</td>
                         </tr>
                       ) : (
                         adminStudents.map((stud) => (
                           <tr key={stud.id} className="hover:bg-gray-50/30 transition-colors">
                             <td className="px-6 py-4 font-bold text-slate-800 text-sm">{stud.name}</td>
                             <td className="px-6 py-4 font-semibold text-xs text-slate-700">@{stud.username}</td>
-                            <td className="px-6 py-4">
-                              <span className="font-mono bg-emerald-50 text-emerald-800 px-2 py-0.5 border border-emerald-100 rounded text-xs tracking-wider font-semibold">
-                                {stud.registration_code || "N/A"}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs font-mono text-slate-400 max-w-[200px] truncate" title={stud.password}>
-                              {stud.password}
-                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-600">{stud.email || 'Not provided'}</td>
                             <td className="px-6 py-4 text-xs text-slate-400">{new Date(stud.created_at).toLocaleString()}</td>
                             <td className="px-6 py-4 text-right">
                               <button
@@ -774,13 +645,13 @@ export default function AdminPortal() {
 
                 <form onSubmit={handleCreateSubadmin} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Officer Full Name</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Email</label>
                     <input
-                      type="text"
+                      type="email"
                       required
-                      placeholder="e.g. Mrs. Jane Smith"
-                      value={newSubadminForm.name}
-                      onChange={(e) => setNewSubadminForm({ ...newSubadminForm, name: e.target.value })}
+                      placeholder="officer@example.com"
+                      value={newSubadminForm.email}
+                      onChange={(e) => setNewSubadminForm({ ...newSubadminForm, email: e.target.value })}
                       autoComplete="off"
                       className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#0F5A47] text-gray-800 text-sm transition-colors placeholder-gray-400"
                     />

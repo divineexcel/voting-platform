@@ -14,19 +14,27 @@ export async function POST(request) {
       );
     }
 
-    const { username, password, name } = await request.json();
+    const { email, username, password } = await request.json();
 
-    if (!username || !password || !name) {
+    if (!email || !username || !password) {
       return NextResponse.json(
-        { error: 'All fields (username, password, and name) are required' },
+        { error: 'Email, username, and password are required' },
         { status: 400 }
       );
     }
 
     const trimmedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
     if (trimmedUsername.length < 3) {
       return NextResponse.json(
         { error: 'Username must be at least 3 characters long' },
+        { status: 400 }
+      );
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return NextResponse.json(
+        { error: 'Please enter a valid email address' },
         { status: 400 }
       );
     }
@@ -40,15 +48,17 @@ export async function POST(request) {
 
     const db = await getDb();
 
-    // Check if username is taken
+    // Keep login identifiers unambiguous across the username and email fields.
     const userExists = await db.get(
-      'SELECT id FROM users WHERE username = ?',
-      [trimmedUsername]
+      `SELECT id FROM users
+       WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE
+          OR username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE`,
+      [trimmedUsername, normalizedEmail, normalizedEmail, trimmedUsername]
     );
 
     if (userExists) {
       return NextResponse.json(
-        { error: 'Username is already taken' },
+        { error: 'That email or username is already in use.' },
         { status: 400 }
       );
     }
@@ -57,13 +67,13 @@ export async function POST(request) {
     const hashedPassword = hashPassword(password);
     
     await db.run(
-      'INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)',
-      [trimmedUsername, hashedPassword, name.trim(), 'subadmin']
+      'INSERT INTO users (username, email, password, name, role) VALUES (?, ?, ?, ?, ?)',
+      [trimmedUsername, normalizedEmail, hashedPassword, trimmedUsername, 'subadmin']
     );
 
     return NextResponse.json({
       success: true,
-      message: `Sub-admin account created successfully for ${name.trim()}.`
+      message: `Sub-admin account created successfully for ${trimmedUsername}.`
     });
   } catch (error) {
     console.error('Create subadmin error:', error);

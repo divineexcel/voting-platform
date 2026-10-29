@@ -65,7 +65,6 @@ async function runTests() {
   console.log('--- STARTING SYSTEM INTEGRATION TESTS ---');
   let adminCookie = null;
   let studentCookie = null;
-  let registrationCode = null;
   let headBoyPositionId = null;
   let applicationId = null;
   let candidateId = null;
@@ -92,27 +91,12 @@ async function runTests() {
     adminCookie = parseCookie(loginRes.headers['set-cookie']);
     console.log('   [PASS] Logged in successfully. Session cookie received.');
 
-    // 3. Generate Registration Code
-    console.log('3. Generating registration code...');
-    const codeGenRes = await request(`${BASE_URL}/api/admin/codes`, {
-      method: 'POST',
-      cookie: adminCookie,
-      body: { count: 1 }
-    });
-
-    if (codeGenRes.status !== 200 || !codeGenRes.body.codes || codeGenRes.body.codes.length === 0) {
-      throw new Error(`Failed to generate code: ${JSON.stringify(codeGenRes.body)}`);
-    }
-    registrationCode = codeGenRes.body.codes[0];
-    console.log(`   [PASS] Generated voter code: ${registrationCode}`);
-
-    // 4. Register a Student User
-    console.log('4. Registering a student user using code...');
+    // 3. Register a student account directly
+    console.log('3. Registering a student account...');
     const regRes = await request(`${BASE_URL}/api/auth/register`, {
       method: 'POST',
       body: {
-        code: registrationCode,
-        name: 'Student Tester',
+        email: 'student.test@example.com',
         username: 'student.test',
         password: 'password123'
       }
@@ -123,6 +107,20 @@ async function runTests() {
     }
     studentCookie = parseCookie(regRes.headers['set-cookie']);
     console.log('   [PASS] Student registered and logged in successfully.');
+
+    // 4. Verify login using email and username
+    console.log('4. Verifying email and username login...');
+    for (const loginIdentifier of ['student.test@example.com', 'student.test']) {
+      const studentLoginRes = await request(`${BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        body: { username: loginIdentifier, password: 'password123' }
+      });
+      if (studentLoginRes.status !== 200) {
+        throw new Error(`Student login failed for ${loginIdentifier}: ${JSON.stringify(studentLoginRes.body)}`);
+      }
+      studentCookie = parseCookie(studentLoginRes.headers['set-cookie']);
+    }
+    console.log('   [PASS] Student can log in with email or username.');
 
     // 5. Fetch positions and find Head Boy position ID
     console.log('5. Fetching available positions...');

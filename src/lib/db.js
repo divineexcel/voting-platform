@@ -58,6 +58,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
+      email TEXT,
       password TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL, -- 'admin', 'subadmin', 'student'
@@ -65,13 +66,14 @@ export async function initDb() {
     );
   `);
 
-  // Create Registration Codes table
+  const userColumns = await db.all('PRAGMA table_info(users)');
+  if (!userColumns.some((column) => column.name === 'email')) {
+    await db.run('ALTER TABLE users ADD COLUMN email TEXT');
+  }
   await db.exec(`
-    CREATE TABLE IF NOT EXISTS registration_codes (
-      code TEXT PRIMARY KEY,
-      used_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+    CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique
+    ON users(email COLLATE NOCASE)
+    WHERE email IS NOT NULL AND email != '';
   `);
 
   // Create Positions table

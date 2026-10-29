@@ -14,11 +14,10 @@ export async function GET(request) {
 
     const db = await getDb();
 
-    // Fetch all users with student role, left-joining registration_codes to show which code they used
+    // Fetch all student accounts without exposing stored password hashes.
     const students = await db.all(
-      `SELECT u.id, u.username, u.name, u.password, u.created_at, rc.code as registration_code
+      `SELECT u.id, u.username, u.email, u.name, u.created_at
        FROM users u
-       LEFT JOIN registration_codes rc ON u.id = rc.used_by_user_id
        WHERE u.role = 'student'
        ORDER BY u.created_at DESC`
     );
@@ -65,8 +64,7 @@ export async function DELETE(request) {
       );
     }
 
-    // Delete student account. Foreign key cascading (ON DELETE CASCADE) will automatically
-    // clean up votes, candidate profiles, and set used_by_user_id to NULL in registration_codes.
+    // Delete student account. Foreign key cascading cleans up votes and candidacy applications.
     await db.run('DELETE FROM users WHERE id = ?', [id]);
 
     return NextResponse.json({

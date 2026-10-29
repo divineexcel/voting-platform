@@ -4,17 +4,21 @@ import { createSession } from '@/lib/auth';
 
 export async function POST(request) {
   try {
-    const { username, password } = await request.json();
+    const { username, identifier, password } = await request.json();
+    const loginIdentifier = (identifier || username || '').trim().toLowerCase();
 
-    if (!username || !password) {
+    if (!loginIdentifier || !password) {
       return NextResponse.json(
-        { error: 'Username and password are required' },
+        { error: 'Username or email and password are required' },
         { status: 400 }
       );
     }
 
     const db = await getDb();
-    const user = await db.get('SELECT * FROM users WHERE username = ?', [username.trim()]);
+    const user = await db.get(
+      'SELECT * FROM users WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE',
+      [loginIdentifier, loginIdentifier]
+    );
 
     if (!user || !verifyPassword(password, user.password)) {
       return NextResponse.json(
@@ -32,6 +36,7 @@ export async function POST(request) {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         name: user.name,
         role: user.role
       }

@@ -40,7 +40,7 @@ export async function getSessionUser(request) {
 
   // Find active session
   const session = await db.get(
-    `SELECT s.token, s.expires_at, u.id, u.username, u.name, u.role
+    `SELECT s.token, s.expires_at, u.id, u.username, u.email, u.name, u.role
      FROM sessions s
      JOIN users u ON s.user_id = u.id
      WHERE s.token = ?`,
@@ -61,6 +61,7 @@ export async function getSessionUser(request) {
   return {
     id: session.id,
     username: session.username,
+    email: session.email,
     name: session.name,
     role: session.role
   };

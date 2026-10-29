@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Vote, LogOut, Key, CheckCircle2, 
+  Vote, LogOut, CheckCircle2,
   XCircle, Check, Loader2, ShieldAlert, AwardIcon, ChevronRight,
   Info, ShieldCheck, ChevronDown
 } from 'lucide-react';
@@ -18,7 +18,7 @@ export default function Home() {
   
   // Auth Form Inputs
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ code: '', name: '', username: '', password: '' });
+  const [registerForm, setRegisterForm] = useState({ email: '', username: '', password: '' });
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
   const [authSubmitting, setAuthSubmitting] = useState(false);
@@ -133,7 +133,7 @@ export default function Home() {
       setAuthSuccess('Account registered successfully! Logging in...');
       setTimeout(() => {
         setUser(data.user);
-        setRegisterForm({ code: '', name: '', username: '', password: '' });
+        setRegisterForm({ email: '', username: '', password: '' });
         fetchStudentData();
       }, 1500);
     } catch (err) {
@@ -266,7 +266,7 @@ export default function Home() {
             <p className="text-slate-500 text-sm font-light leading-relaxed">
               {authView === 'login' 
                 ? 'Welcome, Student! Log in to view positions and cast your ballot.' 
-                : 'Sign up using your student registration code.'}
+                : 'Create your voter account with your email, username, and password.'}
             </p>
           </div>
 
@@ -287,11 +287,11 @@ export default function Home() {
           {authView === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Username</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Username or Email</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. john.doe"
+                  placeholder="Username or email address"
                   value={loginForm.username}
                   onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#0F5A47] focus:ring-1 focus:ring-[#0F5A47] text-gray-800 text-sm transition-colors placeholder-gray-400"
@@ -331,7 +331,7 @@ export default function Home() {
                   onClick={() => { setAuthView('register'); setAuthError(''); }}
                   className="text-xs text-[#0F5A47] hover:text-[#0a4133] font-semibold transition-colors"
                 >
-                  Have a voter code? Register here
+                  New voter? Register here
                 </button>
               </div>
 
@@ -349,28 +349,13 @@ export default function Home() {
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Registration Code</label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="6-character code (e.g. AB8C9D)"
-                    value={registerForm.code}
-                    onChange={(e) => setRegisterForm({ ...registerForm, code: e.target.value.toUpperCase() })}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#0F5A47] focus:ring-1 focus:ring-[#0F5A47] text-gray-800 text-sm transition-colors uppercase tracking-wider placeholder-gray-400"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Full Name</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Email</label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  placeholder="e.g. John Doe"
-                  value={registerForm.name}
-                  onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+                  placeholder="you@example.com"
+                  value={registerForm.email}
+                  onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#0F5A47] focus:ring-1 focus:ring-[#0F5A47] text-gray-800 text-sm transition-colors placeholder-gray-400"
                 />
               </div>
