@@ -1,5 +1,6 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import { createClient } from '@libsql/client';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -7,7 +8,30 @@ import crypto from 'crypto';
 const DB_PATH = path.join(process.cwd(), 'database.sqlite');
 
 let dbInstance = null;
-let isInitializing = false;
+let dbPromise = null;
+
+function createTursoAdapter(client) {
+  return {
+    async all(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return result.rows.map((row) => ({ ...row }));
+    },
+    async get(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return result.rows.length ? { ...result.rows[0] } : undefined;
+    },
+    async run(sql, params = []) {
+      const result = await client.execute({ sql, args: params });
+      return {
+        lastID: result.lastInsertRowid === undefined ? undefined : Number(result.lastInsertRowid),
+        changes: result.rowsAffected,
+      };
+    },
+    async exec(sql) {
+      return client.executeMultiple(sql);
+    },
+  };
+}
 
 // Password Hashing Helper
 export function hashPassword(password) {
@@ -17,41 +41,56 @@ export function hashPassword(password) {
 }
 
 export function verifyPassword(password, storedPassword) {
-  if (!storedPassword || !storedPassword.includes(':')) return false;
+  if (typeof password !== 'string' || typeof storedPassword !== 'string' || !storedPassword.includes(':')) return false;
   const [salt, originalHash] = storedPassword.split(':');
+  if (!salt || !/^[a-f0-9]+$/i.test(originalHash || '')) return false;
   const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === originalHash;
+  const expected = Buffer.from(originalHash, 'hex');
+  const actual = Buffer.from(hash, 'hex');
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
 }
 
 // Get or open database connection
 export async function getDb() {
+  if (dbPromise) return dbPromise;
   if (dbInstance) return dbInstance;
-
-  dbInstance = await open({
-    filename: DB_PATH,
-    driver: sqlite3.Database
-  });
-
-  if (!isInitializing) {
-    isInitializing = true;
+  dbPromise = (async () => {
+    let db;
     try {
-      await initDb();
-    } catch (e) {
-      console.error('Failed to auto-initialize DB:', e);
-    } finally {
-      isInitializing = false;
-    }
-  }
+      const databaseUrl = process.env.TURSO_DATABASE_URL;
+      const authToken = process.env.TURSO_AUTH_TOKEN;
+      const isTursoConfigured = Boolean(databaseUrl || authToken);
 
-  return dbInstance;
+      if (isTursoConfigured && (!databaseUrl || !authToken)) {
+        throw new Error('Both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be configured.');
+      }
+      if (process.env.NODE_ENV === 'production' && !isTursoConfigured) {
+        throw new Error('Turso is required in production. Configure TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.');
+      }
+
+      db = isTursoConfigured
+        ? createTursoAdapter(createClient({ url: databaseUrl, authToken, intMode: 'number' }))
+        : await open({ filename: DB_PATH, driver: sqlite3.Database });
+      await initDb(db);
+      dbInstance = db;
+      return db;
+    } catch (error) {
+      dbPromise = null;
+      await db.close?.();
+      throw error;
+    }
+  })();
+  return dbPromise;
 }
 
 // Initialize database schema and seeds
-export async function initDb() {
-  const db = await getDb();
+export async function initDb(connection) {
+  const db = connection || await getDb();
 
   // Enable foreign keys
-  await db.run('PRAGMA foreign_keys = ON;');
+  if (!process.env.TURSO_DATABASE_URL) {
+    await db.run('PRAGMA foreign_keys = ON;');
+  }
 
   // Create Users table
   await db.exec(`
@@ -122,12 +161,16 @@ export async function initDb() {
   // Seed default super admin user if not exists
   const adminExists = await db.get('SELECT id FROM users WHERE username = ?', ['admin']);
   if (!adminExists) {
-    const defaultAdminPassword = hashPassword('admin123');
+    const initialAdminPassword = process.env.ADMIN_INITIAL_PASSWORD || (process.env.TURSO_DATABASE_URL ? null : 'admin123');
+    if (!initialAdminPassword) {
+      throw new Error('Set ADMIN_INITIAL_PASSWORD before initializing a new Turso database.');
+    }
+    const defaultAdminPassword = hashPassword(initialAdminPassword);
     await db.run(
-      'INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)',
+      'INSERT OR IGNORE INTO users (username, password, name, role) VALUES (?, ?, ?, ?)',
       ['admin', defaultAdminPassword, 'Super Administrator', 'admin']
     );
-    console.log('Database: Default Super Admin account seeded successfully (admin/admin123)');
+    console.log('Database: Super Admin account seeded successfully.');
   }
 
   // Seed default positions if they are empty
@@ -143,7 +186,7 @@ export async function initDb() {
 
     for (const pos of defaultPositions) {
       await db.run(
-        'INSERT INTO positions (name, description) VALUES (?, ?)',
+        'INSERT OR IGNORE INTO positions (name, description) VALUES (?, ?)',
         [pos.name, pos.description]
       );
     }
